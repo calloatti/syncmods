@@ -25,12 +25,12 @@ namespace Calloatti.SyncMods
                 exePath = Path.Combine(rootPath, "Timberborn.exe");
                 shell = "cmd.exe";
 
-                // For Windows: wait 3 seconds, then start the exe with the extra arguments.
+                // For Windows: wait 5 seconds, then start the exe with the extra arguments.
                 // Use escaped quotes for the exe path and the arguments string.
                 // The "" before the exepath is there representing the Window Title, which is required when using start with a quoted path.
                 // The complete string after /C must be enclose in quotes to ensure it's treated as a single command, especially if extraArgs contains spaces.
 
-                args = $"/C \"timeout /t 3 /nobreak & start \"\" \"{exePath}\" {extraArgs}\"";
+                args = $"/C \"timeout /t 5 /nobreak & start \"\" \"{exePath}\" {extraArgs}\"";
             }
             else // Linux or macOS
             {
@@ -41,8 +41,8 @@ namespace Calloatti.SyncMods
 
                 shell = "/bin/bash";
 
-                // For Unix: sleep 3, then use nohup to launch the background process with arguments.
-                args = $"-c \"sleep 3; nohup \\\"{exePath}\\\" {extraArgs} > /dev/null 2>&1 &\"";
+                // For Unix: sleep 5, then use nohup to launch the background process with arguments.
+                args = $"-c \"sleep 5; nohup \\\"{exePath}\\\" {extraArgs} > /dev/null 2>&1 &\"";
             }
 
             ProcessStartInfo psi = new ProcessStartInfo

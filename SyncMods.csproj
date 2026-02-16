@@ -72,6 +72,10 @@
     <Reference Include="Timberborn.Modding">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Timberborn\Timberborn_Data\Managed\Timberborn.Modding.dll</HintPath>
     </Reference>
+    <Reference Include="Timberborn.ModdingUI, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Timberborn\Timberborn_Data\Managed\Timberborn.ModdingUI.dll</HintPath>
+    </Reference>
     <Reference Include="Timberborn.ModManagerScene">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Timberborn\Timberborn_Data\Managed\Timberborn.ModManagerScene.dll</HintPath>
     </Reference>
@@ -96,6 +100,7 @@
     <Compile Include="LoadGameBoxPatch.cs" />
     <Content Include="MainMenuSyncController.txt" />
     <Compile Include="MainMenuPanelRestartPatch.cs" />
+    <Compile Include="ModUIStateController.cs" />
     <Compile Include="SyncModsStartup.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SyncModsInternal.cs" />
