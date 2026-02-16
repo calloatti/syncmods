@@ -23,7 +23,7 @@ namespace Calloatti.SyncMods
             VisualElement exitButton = __result.Q("ExitButton");
             if (exitButton == null)
             {
-                Debug.LogError("RestarterMod: Could not find 'ExitButton'.");
+                Debug.LogError("SyncMods: Could not find 'ExitButton'.");
                 return;
             }
 
@@ -54,7 +54,7 @@ namespace Calloatti.SyncMods
 
             // 4. Click Event
             restartButton.RegisterCallback<ClickEvent>(evt => {
-                Debug.Log("RestarterMod: Restarting...");
+                Debug.Log("SyncMods: Restarting...");
                 GameRestarter.Restart("");
             });
 
@@ -83,11 +83,11 @@ namespace Calloatti.SyncMods
                     }
                 }
 
-                Debug.Log($"RestarterMod: Inserted button and compacted spacing for {menuItems.Count} items.");
+                Debug.Log($"SyncMods: Inserted button and compacted spacing for {menuItems.Count} items.");
             }
             else
             {
-                Debug.LogError("RestarterMod: Container is null, cannot insert button.");
+                Debug.LogError("SyncMods: Container is null, cannot insert button.");
             }
         }
     }
