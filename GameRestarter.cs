@@ -95,7 +95,7 @@ namespace Calloatti.SyncMods
             catch (Exception ex)
             {
                 LogDirect($"CRITICAL ERROR launching process: {ex.Message}");
-                UnityEngine.Debug.LogError($"[SyncMods] Failed to restart process: {ex.Message}");
+                LogDirect($"Failed to restart process: {ex.Message}");
             }
 
             // Attempt to quit the application

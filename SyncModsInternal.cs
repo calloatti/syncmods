@@ -84,16 +84,16 @@ namespace Calloatti.SyncMods
                 int highPriority = 2000000;
                 foreach (var modRef in metadata.Mods)
                 {
-                    var installedMod = _modRepository.Mods.FirstOrDefault(m =>
-                        string.Equals(m.Manifest.Id, modRef.Id, StringComparison.OrdinalIgnoreCase));
+                    Mod installedMod = SelectPreferredMod(modRef.Id);
 
                     if (installedMod != null)
                     {
                         string modKey = GetModKey(installedMod);
+
                         if (UseModPlayerPrefs)
                         {
-                            ModPlayerPrefsHelper.ToggleMod(true, installedMod); //
-                            ModPlayerPrefsHelper.SetModPriority(installedMod, highPriority); //
+                            ModPlayerPrefsHelper.ToggleMod(true, installedMod);
+                            ModPlayerPrefsHelper.SetModPriority(installedMod, highPriority);
                         }
                         else
                         {
@@ -107,11 +107,30 @@ namespace Calloatti.SyncMods
                         enabledCount++;
                     }
                 }
-
                 // 5. FORCE ESSENTIALS
-                EnsureEssentialMods(200000000);
+                EnsureEssentialMod("Harmony", 200000000);
+                EnsureEssentialMod("calloatti.syncmods", 200000000 - 1);
 
                 PlayerPrefs.Save();
+
+                List<Mod> sortedMods;
+
+                if (UseModPlayerPrefs)
+                {
+                    sortedMods = _modRepository.Mods
+                        .OrderByDescending(mod => ModPlayerPrefsHelper.GetModPriority(mod))
+                        .ToList();
+                }
+                else
+                {
+                    sortedMods = _modRepository.Mods
+                        .OrderByDescending(mod => PlayerPrefs.GetInt($"ModPriority.{GetModKey(mod)}", -1))
+                        .ToList();
+                }
+
+                // Refresh the UI with specific order and trigger notifications
+                ModUIStateController.Refresh(sortedMods);
+
                 Debug.Log($"[SyncMods] --- INTERNAL SYNC COMPLETE: {enabledCount} mods enabled. ---");
             }
             catch (Exception ex)
@@ -120,16 +139,18 @@ namespace Calloatti.SyncMods
             }
         }
 
-        private void EnsureEssentialMods(int topPriority)
+        private void EnsureEssentialMod(string modId, int topPriority)
         {
-            var harmonyMod = _modRepository.Mods.FirstOrDefault(m => m.Manifest.Id == "Harmony");
-            if (harmonyMod != null)
+            var SingleMod = SelectPreferredMod(modId);
+
+            if (SingleMod != null)
             {
-                string key = GetModKey(harmonyMod);
+                string key = GetModKey(SingleMod);
+
                 if (UseModPlayerPrefs)
                 {
-                    ModPlayerPrefsHelper.ToggleMod(true, harmonyMod); //
-                    ModPlayerPrefsHelper.SetModPriority(harmonyMod, topPriority); //
+                    ModPlayerPrefsHelper.ToggleMod(true, SingleMod); //
+                    ModPlayerPrefsHelper.SetModPriority(SingleMod, topPriority); //
                 }
                 else
                 {
@@ -138,39 +159,34 @@ namespace Calloatti.SyncMods
                 }
             }
 
-            var syncMod = _modRepository.Mods.FirstOrDefault(m => m.Manifest.Id == "calloatti.syncmods");
-            if (syncMod != null)
-            {
-                string key = GetModKey(syncMod);
-                if (UseModPlayerPrefs)
-                {
-                    ModPlayerPrefsHelper.ToggleMod(true, syncMod); //
-                    ModPlayerPrefsHelper.SetModPriority(syncMod, topPriority - 1); //
-                }
-                else
-                {
-                    PlayerPrefs.SetInt($"ModEnabled.{key}", 1);
-                    PlayerPrefs.SetInt($"ModPriority.{key}", topPriority - 1);
-                }
-            }
-
-            // Order by Priority ascending to prevent UI inversion
-            var sortedMods = _modRepository.Mods
-                .OrderByDescending(modi =>
-                {
-                    if (UseModPlayerPrefs)
-                    {
-                        return ModPlayerPrefsHelper.GetModPriority(modi); //
-                    }
-                    return PlayerPrefs.GetInt($"ModPriority.{GetModKey(modi)}", -1);
-                })
-                .ToList();
-
-            // Refresh the UI with specific order and trigger notifications
-            ModUIStateController.Refresh(sortedMods);
         }
 
         private string GetModKey(Mod mod) => $"{mod.ModDirectory.DisplaySource}.{mod.ModDirectory.OriginName}.{mod.Manifest.Id}";
+
+        private Mod SelectPreferredMod(string modId)
+        {
+            // 1. Find all installed mods with this ID
+            var matchingMods = _modRepository.Mods
+                .Where(m => string.Equals(m.Manifest.Id, modId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matchingMods.Count == 0) return null;
+
+            // 2. If we have duplicates, explicitly look for the Local version
+            if (matchingMods.Count > 1)
+            {
+                var localVersion = matchingMods.Find(m => m.ModDirectory.DisplaySource == "Local");
+
+                if (localVersion != null)
+                {
+                    Debug.Log($"[SyncMods] Duplicate found for {modId}. Prioritizing Local version.");
+                    return localVersion;
+                }
+            }
+
+            // 3. Otherwise, just return the first one found 
+            return matchingMods[0];
+        }
     }
 
     [Context("MainMenu")]
