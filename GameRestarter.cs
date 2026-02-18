@@ -17,7 +17,7 @@ namespace Calloatti.SyncMods
         {
             try
             {
-                File.AppendAllText(LogFilePath, $"[SyncMods] {message}{Environment.NewLine}");
+                File.AppendAllText(LogFilePath, $"{Log.Prefix} {message}{Environment.NewLine}");
             }
             catch
             {

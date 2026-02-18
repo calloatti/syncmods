@@ -1,11 +1,21 @@
-﻿using HarmonyLib;
+﻿using Bindito.Core;
+using HarmonyLib;
 using System;
 using Timberborn.ModManagerScene;
 using UnityEngine;
 
 namespace Calloatti.SyncMods
 {
-    public class SyncModsStartup : IModStarter
+    public class Log
+    {
+        public static readonly string Prefix = "[SyncMods]";
+
+        public static void Info(string message) => Debug.Log($"{Prefix} {message}");
+    }
+
+    [Context("MainMenu")] // Define DÓNDE se ejecuta Configure
+    [Context("Game")]     // Define DÓNDE se ejecuta Configure
+    public class SyncModsStartup : IModStarter, IConfigurator
     {
         private const string HarmonyId = "calloatti.SyncMods";
 
@@ -15,23 +25,29 @@ namespace Calloatti.SyncMods
             ApplyHarmonyPatches();
         }
 
+        // AÑADIDO: Método obligatorio de IConfigurator para inicializar LocHelper
+        public void Configure(IContainerDefinition containerDefinition)
+        {
+            LocHelper.Register(containerDefinition);
+        }
+
         private void ApplyHarmonyPatches()
         {
             var harmonyInstance = new Harmony(HarmonyId);
             try
             {
                 harmonyInstance.PatchAll();
-                Debug.Log($"[SyncMods] Harmony patches applied successfully.");
+                Log.Info($" Harmony patches applied successfully.");
             }
             catch (Exception ex)
             {
-                Debug.Log($"[SyncMods] Failed to apply harmony patches: {ex.Message}");
+                Log.Info($" Failed to apply harmony patches: {ex.Message}");
             }
         }
 
         private void LogInitialization()
         {
-            Debug.Log("[SyncMods] Mod initialized");
+            Log.Info($" Mod initialized");
         }
     }
 }

@@ -1,12 +1,12 @@
 ﻿using HarmonyLib;
-using UnityEngine;
-using UnityEngine.UIElements;
-using System.Reflection;
-using Timberborn.Localization;
-using Timberborn.GameSaveRepositorySystem;
-using Timberborn.CoreUI;
 using System;
-using System.IO;
+using System.Reflection;
+using Timberborn.CoreUI;
+using Timberborn.GameSaveRepositorySystem;
+using Timberborn.Localization;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 namespace Calloatti.SyncMods
 {
@@ -32,7 +32,7 @@ namespace Calloatti.SyncMods
 
                 Button syncButton = (Button)Activator.CreateInstance(loadButton.GetType());
                 syncButton.name = SyncButtonName;
-                syncButton.text = "Sync Mods";
+                syncButton.text = LocHelper.T("calloatti.syncmods.ButtonSync");
 
                 foreach (var className in loadButton.GetClasses()) syncButton.AddToClassList(className);
                 syncButton.style.width = loadButton.style.width;
@@ -61,53 +61,56 @@ namespace Calloatti.SyncMods
                                 SyncModsinternal.Instance.SyncFromInternalMetadata(selectedSave);
                             }
 
+                            var SaveName = selectedSave.SaveName;
+                            var SettlementName = selectedSave.SettlementReference.SettlementName;
+
+                            // This works
+                            var extraArgs = $" -skipModManager -settlementName \"{SettlementName}\" -saveName \"{SaveName}\"";
+
+                            // This crashes
+                            //var extraArgs = $" -settlementName \"{SettlementName}\" -saveName \"{SaveName}\"";
+
+                            
                             // --- DIALOG CONFIGURATION ---
                             var builder = dialogBoxShower?.Create()
-                                .SetMessage("Mods synced successfully from internal save data.")
+                                .SetMessage(LocHelper.T("calloatti.syncmods.SyncDialogboxText"))
 
-                                // 1. RESTART (Safe) - Green Confirm Button
-                                .SetConfirmButton(() => {GameRestarter.Restart("");}, "Restart")
+                               // 1. CANCEL - Red/Standard Cancel Button
+                               .SetCancelButton(() => { }, LocHelper.T("calloatti.syncmods.ButtonCancel")) // Closes the dialog silently
 
-                                // 2. CANCEL - Red/Standard Cancel Button
-                                .SetCancelButton(() => {
-                                    UnityEngine.Debug.Log("[SyncMods] User chose to stay on Main Menu.");
-                                }, "Cancel")
+                                // 2. RESTART + LOAD - Blue Info Button
+                                .SetInfoButton(() => { GameRestarter.Restart(extraArgs); }, LocHelper.T("calloatti.syncmods.ButtonRestartLoad"))
 
-                                // 3. RESTART + LOAD - Blue Info Button (To be Disabled)
-                                .SetInfoButton(() => { GameRestarter.Restart("");}, "Restart + Load");
+                                // 3. RESTART (Safe) - Green Confirm Button
+                                .SetConfirmButton(() => { GameRestarter.Restart(""); }, LocHelper.T("calloatti.syncmods.ButtonRestart"));
 
                             // SHOW THE DIALOG
                             builder.Show();
 
-                            // --- THE FIX: NATIVE DISABLE ---
-                            // We search the UI tree for the button we just created and strictly disable it.
-                            try
-                            {
-                                // Access the main UI panel (root of the screen)
-                                var visualRoot = root.panel?.visualTree;
-                                if (visualRoot != null)
-                                {
-                                    // Find the button by its text content
-                                    visualRoot.Query<Button>().ForEach(btn =>
-                                    {
-                                        if (btn.text == "Restart + Load")
-                                        {
-                                            // This applies the native Unity/Timberborn disabled state (grayed out + unclickable)
-                                            //btn.SetEnabled(false);
-                                        }
-                                    });
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                UnityEngine.Debug.LogWarning($"[SyncMods] Failed to set button state: {ex.Message}");
-                            }
                         }
                     }
                 });
 
                 VisualElement container = loadButton.parent;
                 container.Insert(container.IndexOf(loadButton), syncButton);
+            }
+
+            // ---------------------------------------------------------
+            // ENABLE/DISABLE LOGIC
+            // ---------------------------------------------------------
+            if (root != null)
+            {
+                Button existingSyncButton = root.Q<Button>(SyncButtonName);
+
+                if (existingSyncButton != null)
+                {
+                    //Log.Info($" SceneManager.GetActiveScene().name: {SceneManager.GetActiveScene().name}");
+
+                    bool isMainMenu = string.Equals(SceneManager.GetActiveScene().name, "1-MainMenuScene", StringComparison.OrdinalIgnoreCase);
+
+                    existingSyncButton.SetEnabled(isMainMenu);
+
+                }
             }
         }
     }

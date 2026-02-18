@@ -10,7 +10,7 @@ using System.Linq;
 namespace Calloatti.SyncMods
 {
     [HarmonyPatch(typeof(MainMenuPanel), "GetPanel")]
-    public static class MainMenuRestartPatch
+    public static class MainMenuPanelPatch
     {
         private static void Postfix(MainMenuPanel __instance, VisualElement __result)
         {
@@ -23,7 +23,7 @@ namespace Calloatti.SyncMods
             VisualElement exitButton = __result.Q("ExitButton");
             if (exitButton == null)
             {
-                Debug.LogError("SyncMods: Could not find 'ExitButton'.");
+                Log.Info($"SyncMods: Could not find 'ExitButton'.");
                 return;
             }
 
@@ -32,9 +32,8 @@ namespace Calloatti.SyncMods
             restartButton.name = "RestartGameButton";
 
             // Localization
-            FieldInfo locField = typeof(MainMenuPanel).GetField("_loc", BindingFlags.NonPublic | BindingFlags.Instance);
-            ILoc loc = (ILoc)locField?.GetValue(__instance);
-            restartButton.text = loc != null ? "Restart Game" : "Restart Game";
+
+            restartButton.text = LocHelper.T("calloatti.syncmods.ButtonRestart");
 
             // 3. Copy Styles
             int sheetCount = exitButton.styleSheets.count;
@@ -54,7 +53,7 @@ namespace Calloatti.SyncMods
 
             // 4. Click Event
             restartButton.RegisterCallback<ClickEvent>(evt => {
-                Debug.Log("SyncMods: Restarting...");
+                Log.Info($"SyncMods: Restarting...");
                 GameRestarter.Restart("");
             });
 
@@ -83,11 +82,11 @@ namespace Calloatti.SyncMods
                     }
                 }
 
-                Debug.Log($"SyncMods: Inserted button and compacted spacing for {menuItems.Count} items.");
+                Log.Info($" Inserted button and compacted spacing for {menuItems.Count} items.");
             }
             else
             {
-                Debug.LogError("SyncMods: Container is null, cannot insert button.");
+                Log.Info($" Container is null, cannot insert button.");
             }
         }
     }

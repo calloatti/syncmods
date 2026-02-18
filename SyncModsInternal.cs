@@ -6,6 +6,7 @@ using Timberborn.GameSaveRepositorySystem;
 using Timberborn.Modding;
 using Timberborn.SaveMetadataSystem;
 using UnityEngine;
+using static UnityEngine.Scripting.GarbageCollector;
 
 namespace Calloatti.SyncMods
 {
@@ -25,12 +26,12 @@ namespace Calloatti.SyncMods
             _gameSaveDeserializer = gameSaveDeserializer;
             _saveMetadataSerializer = saveMetadataSerializer;
             Instance = this;
-            Debug.Log("[SyncMods] SyncModsinternal service initialized.");
+            Log.Info($" SyncModsinternal service initialized.");
         }
 
         public void SyncFromInternalMetadata(SaveReference saveRef)
         {
-            Debug.Log($"[SyncMods] --- INTERNAL SYNC START: {saveRef.SaveName} ---");
+            Log.Info($" --- INTERNAL SYNC START: {saveRef.SaveName} ---");
 
             try
             {
@@ -51,7 +52,7 @@ namespace Calloatti.SyncMods
                     }
                 }
 
-                // 2. GLOBAL RE-PRIORITIZE: Sort all installed mods Descending (Z to A)
+                // 2. GLOBAL RE-PRIORITIZE: Sort all installed mods by mod name Descending (Z to A)
                 List<Mod> allMods = _modRepository.Mods.ToList();
                 var sortedList = allMods.OrderByDescending(m => m.Manifest.Name).ToList();
 
@@ -69,17 +70,17 @@ namespace Calloatti.SyncMods
                     }
                     priorityCounter++;
                 }
-                Debug.Log($"[SyncMods] Global baseline priorities set (1 to {priorityCounter - 1}) based on Z-A sort.");
+                Log.Info($" Global baseline priorities set (1 to {priorityCounter - 1}) based on Z-A sort.");
 
                 // 3. READ INTERNAL METADATA
                 SaveMetadata metadata = _gameSaveDeserializer.ReadFromSaveFile<SaveMetadata>(saveRef, _saveMetadataSerializer);
                 if (metadata == null || metadata.Mods == null)
                 {
-                    Debug.LogWarning("[SyncMods] No internal mod metadata found in save.");
+                    Log.Info("No internal mod metadata found in save.");
                     return;
                 }
 
-                // 4. ENABLE MODS FROM SAVE & ASSIGN HIGH STEPPED PRIORITIES
+                // 4. ENABLE MODS FROM SAVE & ASSIGN HIGH STEPPED PRIORITIES SO TEHY ARE AT THE TOP OF THE LIST
                 int enabledCount = 0;
                 int highPriority = 2000000;
                 foreach (var modRef in metadata.Mods)
@@ -101,15 +102,63 @@ namespace Calloatti.SyncMods
                             PlayerPrefs.SetInt($"ModPriority.{modKey}", highPriority);
                         }
 
-                        Debug.Log($"[SyncMods] Enabled: {installedMod.Manifest.Name} | Custom Priority: {highPriority}");
+                        Log.Info($"Enabled: {installedMod.Manifest.Name} | Custom Priority: {highPriority}");
 
                         highPriority -= 10;
                         enabledCount++;
                     }
                 }
-                // 5. FORCE ESSENTIALS
+                // 5. ENABLE AND MOVE ESSENTIAL MODS TO THE TOP (HARMONY + SYNCMODS)
                 EnsureEssentialMod("Harmony", 200000000);
                 EnsureEssentialMod("calloatti.syncmods", 200000000 - 1);
+
+
+                // 6. GROUP LOCAL MOD WITH WORKSHOP MOD
+
+                // 1. Group all discovered mods by their Unique ID from the manifest
+                var modGroups = _modRepository.Mods.GroupBy(m => m.Manifest.Id);
+
+                foreach (var group in modGroups)
+                {
+                    // Only process if we have at least two versions of the same mod ID
+                    if (group.Count() > 1)
+                    {
+                        Mod localVersion = null;
+                        Mod workshopVersion = null;
+
+                        foreach (var mod in group)
+                        {
+                            // Check the directory path to distinguish between local files and Steam Workshop files
+                            if (mod.ModDirectory.DisplaySource == "Local")
+                            {
+                                localVersion = mod;
+                            }
+                            else
+                            {
+                                workshopVersion = mod;
+                            }
+                        }
+
+                        // 2. If both versions exist, set the Workshop priority lower than the Local priority
+                        if (localVersion != null && workshopVersion != null)
+                        {
+                            // Retrieve the current local priority using the game's internal preference helper
+
+                            string key = GetModKey(localVersion);
+
+
+                            int localPriority = PlayerPrefs.GetInt($"ModPriority.{key}", 0);
+
+                            key = GetModKey(workshopVersion);
+
+                            // Set the workshop priority to (localPriority - 1) so it lists after the local version in the UI
+                            PlayerPrefs.SetInt($"ModPriority.{key}", localPriority - 1);
+
+                            Log.Info($"Workshop mod {workshopVersion.Manifest.Id} priority set to {localPriority - 1}.");
+                        }
+                    }
+                }
+
 
                 PlayerPrefs.Save();
 
@@ -131,15 +180,15 @@ namespace Calloatti.SyncMods
                 // Refresh the UI with specific order and trigger notifications
                 ModUIStateController.Refresh(sortedMods);
 
-                Debug.Log($"[SyncMods] --- INTERNAL SYNC COMPLETE: {enabledCount} mods enabled. ---");
+                Log.Info($" --- INTERNAL SYNC COMPLETE: {enabledCount} mods enabled. ---");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[SyncMods] Internal Sync Critical Error: {ex.Message}");
+                Log.Info($"Internal Sync Critical Error: {ex.Message}");
             }
         }
 
-        private void EnsureEssentialMod(string modId, int topPriority)
+        private void EnsureEssentialMod(string modId, int Priority)
         {
             var SingleMod = SelectPreferredMod(modId);
 
@@ -150,12 +199,12 @@ namespace Calloatti.SyncMods
                 if (UseModPlayerPrefs)
                 {
                     ModPlayerPrefsHelper.ToggleMod(true, SingleMod); //
-                    ModPlayerPrefsHelper.SetModPriority(SingleMod, topPriority); //
+                    ModPlayerPrefsHelper.SetModPriority(SingleMod, Priority); //
                 }
                 else
                 {
                     PlayerPrefs.SetInt($"ModEnabled.{key}", 1);
-                    PlayerPrefs.SetInt($"ModPriority.{key}", topPriority);
+                    PlayerPrefs.SetInt($"ModPriority.{key}", Priority);
                 }
             }
 
@@ -179,7 +228,7 @@ namespace Calloatti.SyncMods
 
                 if (localVersion != null)
                 {
-                    Debug.Log($"[SyncMods] Duplicate found for {modId}. Prioritizing Local version.");
+                    Log.Info($"[SelectPreferredMod] Duplicate found for {modId}. Prioritizing Local version.");
                     return localVersion;
                 }
             }
