@@ -54,7 +54,7 @@ namespace Calloatti.SyncMods
             // 4. Click Event
             restartButton.RegisterCallback<ClickEvent>(evt => {
                 Log.Info($"SyncMods: Restarting...");
-                GameRestarter.Restart("");
+                GameRestarter.Restart();
             });
 
             // 5. Inject and Compact

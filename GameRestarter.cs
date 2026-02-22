@@ -5,109 +5,118 @@ using System;
 
 namespace Calloatti.SyncMods
 {
-    public static class GameRestarter
+  public static class GameRestarter
+  {
+    private static readonly string LogFilePath = Path.Combine(Application.persistentDataPath, "SyncMods.log");
+
+    private static void LogDirect(string message)
     {
-        // Log file located in the same folder as Player.log (Application.persistentDataPath)
-        private static readonly string LogFilePath = Path.Combine(Application.persistentDataPath, "SyncMods.log");
-
-        /// <summary>
-        /// Writes directly to disk to ensure logs are saved before the process terminates.
-        /// </summary>
-        private static void LogDirect(string message)
-        {
-            try
-            {
-                File.AppendAllText(LogFilePath, $"{Log.Prefix} {message}{Environment.NewLine}");
-            }
-            catch
-            {
-                // Silently ignore logging errors to prevent recursive crashes 
-            }
-        }
-
-        /// <summary>
-        /// Restarts the game, optionally passing command-line arguments.
-        /// Uses a PID monitoring loop to ensure the old process is fully gone before starting the new one.
-        /// </summary>
-        /// <param name="extraArgs">The arguments to pass to the new game process.</param>
-        public static void Restart(string extraArgs = "")
-        {
-            // Reset the log file for this run
-            try { if (File.Exists(LogFilePath)) File.Delete(LogFilePath); } catch { }
-
-            LogDirect("Restart sequence initiated.");
-
-            string rootPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string exePath;
-            string shell;
-            string args;
-
-            // Get the current process ID to monitor its exit
-            int currentPid = Process.GetCurrentProcess().Id;
-            LogDirect($"Current Process ID: {currentPid}");
-
-            // Cross-Platform Path and Command Setup
-            if (Application.platform == RuntimePlatform.WindowsPlayer)
-            {
-                exePath = Path.Combine(rootPath, "Timberborn.exe");
-                shell = "cmd.exe";
-
-                // Use escaped quotes for the exe path and the arguments string.
-                // The "" before the exepath is there representing the Window Title, which is required when using start with a quoted path.
-                // The complete string after /C must be enclose in quotes to ensure it's treated as a single command, especially if extraArgs contains spaces.
-
-                // Windows: Loop checks for PID existence. Once gone (||), it starts the exe.
-                // Wrapped in outer quotes to preserve internal quotes in extraArgs.
-                args = $"/C \"for /L %i in (1,0,2) do (tasklist /FI \"PID eq {currentPid}\" 2>nul | find \"{currentPid}\" >nul || (start \"\" \"{exePath}\" {extraArgs} & exit)) & timeout /t 1 /nobreak >nul\"";
-            }
-            else // Linux or macOS
-            {
-                if (Application.platform == RuntimePlatform.OSXPlayer)
-                    exePath = Path.Combine(rootPath, "Timberborn.app/Contents/MacOS/Timberborn");
-                else
-                    exePath = Path.Combine(rootPath, "Timberborn.x86_64");
-
-                shell = "/bin/bash";
-
-                // Unix: Loop with kill -0 checks for PID. Once gone, nohup launches.
-                args = $"-c \"while kill -0 {currentPid} 2>/dev/null; do sleep 1; done; nohup \\\"{exePath}\\\" {extraArgs} > /dev/null 2>&1 &\"";
-            }
-
-            ProcessStartInfo psi = new ProcessStartInfo
-            {
-                FileName = shell,
-                Arguments = args,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
-
-            LogDirect($"Shell: '{shell}'");
-            LogDirect($"ExePath: '{exePath}'");
-            LogDirect($"ExtraArgs: '{extraArgs}'");
-            LogDirect($"Full Args: '{args}'");
-
-            try
-            {
-                LogDirect("Launching shell process...");
-                Process.Start(psi);
-                LogDirect("Shell process launched.");
-            }
-            catch (Exception ex)
-            {
-                LogDirect($"CRITICAL ERROR launching process: {ex.Message}");
-                LogDirect($"Failed to restart process: {ex.Message}");
-            }
-
-            // Attempt to quit the application
-            try
-            {
-                LogDirect("Calling Application.Quit()...");
-                Application.Quit();
-            }
-            catch (Exception ex)
-            {
-                LogDirect($"ERROR during Application.Quit(): {ex.Message}");
-            }
-        }
+      try { File.AppendAllText(LogFilePath, $"{Log.Prefix} {message}{Environment.NewLine}"); } catch { }
     }
+
+    /// <summary>
+    /// Overload to allow calling Restart() without any arguments.
+    /// </summary>
+    public static void Restart()
+    {
+      Restart(new string[0]);
+    }
+
+    // Minimal Change: Changed parameter to string[] args
+    public static void Restart(string[] args)
+    {
+      try { if (File.Exists(LogFilePath)) File.Delete(LogFilePath); } catch { }
+
+      LogDirect("Restart sequence initiated.");
+
+      string rootPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+      string exePath;
+      int currentPid = Process.GetCurrentProcess().Id;
+      LogDirect($"Current Process ID: {currentPid}");
+
+      ProcessStartInfo psi = new ProcessStartInfo
+      {
+        CreateNoWindow = false, // Keep visible for verification
+        UseShellExecute = true
+      };
+
+      if (Application.platform == RuntimePlatform.WindowsPlayer)
+      {
+        exePath = Path.Combine(rootPath, "Timberborn.exe");
+
+        // We keep the exact logic that worked: 
+        // wrapping each argument in literal quotes for the shell.
+        string argString = string.Join(" ", Array.ConvertAll(args, a => $"\"{a}\""));
+
+        // This is the literal string we feed into the pipe.
+        string psCommand = $"Wait-Process -Id {currentPid} -ErrorAction SilentlyContinue; & '{exePath}' {argString}";
+
+        LogDirect($"Piping to hidden process: {psCommand}");
+
+        psi.FileName = "powershell.exe";
+        // -WindowStyle Hidden helps prevent that initial flash.
+        psi.Arguments = "-NoProfile -WindowStyle Hidden";
+
+        // Core settings to make it invisible and pipe-able
+        psi.RedirectStandardInput = true;
+        psi.UseShellExecute = false;
+        psi.CreateNoWindow = true; // This kills the console window entirely
+
+        try
+        {
+          Process p = Process.Start(psi);
+          using (StreamWriter sw = p.StandardInput)
+          {
+            if (sw.BaseStream.CanWrite)
+            {
+              // We "type" the command into the hidden background process.
+              sw.WriteLine(psCommand);
+            }
+          }
+        }
+        catch (Exception ex)
+        {
+          LogDirect($"Pipe Error: {ex.Message}");
+        }
+      }
+      else // Linux or macOS
+      {
+        if (Application.platform == RuntimePlatform.OSXPlayer)
+          exePath = Path.Combine(rootPath, "Timberborn.app/Contents/MacOS/Timberborn");
+        else
+          exePath = Path.Combine(rootPath, "Timberborn.x86_64");
+
+        // Minimal Change: Join array with spaces and quotes for Bash
+        string unixArgs = string.Join(" ", Array.ConvertAll(args, a => $"\"{a}\""));
+        string shCommand = $"while kill -0 {currentPid} 2>/dev/null; do sleep 1; done; nohup \"{exePath}\" {unixArgs} > /dev/null 2>&1 &";
+
+        psi.FileName = "/bin/bash";
+        psi.Arguments = $"-c \"{shCommand}\"";
+
+        // LOG THE FULL COMMAND
+        LogDirect($"Full Bash Command: {shCommand}");
+      }
+
+      try
+      {
+        LogDirect("Launching background restarter...");
+        Process.Start(psi);
+        LogDirect("Restarter launched.");
+      }
+      catch (Exception ex)
+      {
+        LogDirect($"CRITICAL ERROR launching restarter: {ex.Message}");
+      }
+
+      try
+      {
+        LogDirect("Calling Application.Quit()...");
+        Application.Quit();
+      }
+      catch (Exception ex)
+      {
+        LogDirect($"ERROR during Application.Quit(): {ex.Message}");
+      }
+    }
+  }
 }

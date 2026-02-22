@@ -10,108 +10,107 @@ using UnityEngine.UIElements;
 
 namespace Calloatti.SyncMods
 {
-    [HarmonyPatch]
-    public static class LoadGameBoxPatch
+  [HarmonyPatch]
+  public static class LoadGameBoxPatch
+  {
+    private const string SyncButtonName = "SyncButtonPermanent";
+
+    [HarmonyPatch("Timberborn.GameSaveRepositorySystemUI.LoadGameBox", "Open")]
+    [HarmonyPostfix]
+    public static void OpenPostfix(object __instance)
     {
-        private const string SyncButtonName = "SyncButtonPermanent";
+      var getPanelMethod = __instance.GetType().GetMethod("GetPanel", BindingFlags.Public | BindingFlags.Instance);
+      VisualElement root = (VisualElement)getPanelMethod?.Invoke(__instance, null);
 
-        [HarmonyPatch("Timberborn.GameSaveRepositorySystemUI.LoadGameBox", "Open")]
-        [HarmonyPostfix]
-        public static void OpenPostfix(object __instance)
+      if (root != null && root.Q(SyncButtonName) == null)
+      {
+        Button loadButton = root.Q<Button>("LoadButton");
+        if (loadButton == null) return;
+
+        var dialogShowerField = __instance.GetType().GetField("_dialogBoxShower", BindingFlags.NonPublic | BindingFlags.Instance);
+        DialogBoxShower dialogBoxShower = (DialogBoxShower)dialogShowerField?.GetValue(__instance);
+
+        Button syncButton = (Button)Activator.CreateInstance(loadButton.GetType());
+        syncButton.name = SyncButtonName;
+        syncButton.text = LocHelper.T("calloatti.syncmods.ButtonSync");
+
+        foreach (var className in loadButton.GetClasses()) syncButton.AddToClassList(className);
+        syncButton.style.width = loadButton.style.width;
+        syncButton.style.height = loadButton.style.height;
+        //syncButton.style.marginRight = 10;
+
+        syncButton.RegisterCallback<ClickEvent>(evt =>
         {
-            var getPanelMethod = __instance.GetType().GetMethod("GetPanel", BindingFlags.Public | BindingFlags.Instance);
-            VisualElement root = (VisualElement)getPanelMethod?.Invoke(__instance, null);
+          FieldInfo saveListField = __instance.GetType().GetField("_saveList", BindingFlags.NonPublic | BindingFlags.Instance);
+          object saveList = saveListField?.GetValue(__instance);
 
-            if (root != null && root.Q(SyncButtonName) == null)
+          if (saveList != null)
+          {
+            MethodInfo tryGetMethod = saveList.GetType().GetMethod("TryGetSelectedSave");
+            object[] args = new object[] { null };
+            bool found = (bool)tryGetMethod.Invoke(saveList, args);
+
+            if (found && args[0] != null)
             {
-                Button loadButton = root.Q<Button>("LoadButton");
-                if (loadButton == null) return;
+              object gameSaveItem = args[0];
+              PropertyInfo saveRefProp = gameSaveItem.GetType().GetProperty("SaveReference");
+              SaveReference selectedSave = (SaveReference)saveRefProp.GetValue(gameSaveItem);
 
-                var dialogShowerField = __instance.GetType().GetField("_dialogBoxShower", BindingFlags.NonPublic | BindingFlags.Instance);
-                DialogBoxShower dialogBoxShower = (DialogBoxShower)dialogShowerField?.GetValue(__instance);
+              if (SyncModsinternal.Instance != null)
+              {
+                SyncModsinternal.Instance.SyncFromInternalMetadata(selectedSave);
+              }
 
-                Button syncButton = (Button)Activator.CreateInstance(loadButton.GetType());
-                syncButton.name = SyncButtonName;
-                syncButton.text = LocHelper.T("calloatti.syncmods.ButtonSync");
+              var SaveName = selectedSave.SaveName;
+              var SettlementName = selectedSave.SettlementReference.SettlementName;
 
-                foreach (var className in loadButton.GetClasses()) syncButton.AddToClassList(className);
-                syncButton.style.width = loadButton.style.width;
-                syncButton.style.height = loadButton.style.height;
-                //syncButton.style.marginRight = 10;
+              // This works
+              var extraArgs = new[] { "-skipModManager", "-settlementName", SettlementName, "-saveName", SaveName };
 
-                syncButton.RegisterCallback<ClickEvent>(evt =>
-                {
-                    FieldInfo saveListField = __instance.GetType().GetField("_saveList", BindingFlags.NonPublic | BindingFlags.Instance);
-                    object saveList = saveListField?.GetValue(__instance);
+              // This crashes
+              // var extraArgs = new[] {"-settlementName", SettlementName, "-saveName", SaveName };
 
-                    if (saveList != null)
-                    {
-                        MethodInfo tryGetMethod = saveList.GetType().GetMethod("TryGetSelectedSave");
-                        object[] args = new object[] { null };
-                        bool found = (bool)tryGetMethod.Invoke(saveList, args);
+              // --- DIALOG CONFIGURATION ---
+              var builder = dialogBoxShower?.Create()
+                  .SetMessage(LocHelper.T("calloatti.syncmods.SyncDialogboxText"))
 
-                        if (found && args[0] != null)
-                        {
-                            object gameSaveItem = args[0];
-                            PropertyInfo saveRefProp = gameSaveItem.GetType().GetProperty("SaveReference");
-                            SaveReference selectedSave = (SaveReference)saveRefProp.GetValue(gameSaveItem);
+                 // 1. CANCEL - Red/Standard Cancel Button
+                 .SetCancelButton(() => { }, LocHelper.T("calloatti.syncmods.ButtonCancel")) // Closes the dialog silently
 
-                            if (SyncModsinternal.Instance != null)
-                            {
-                                SyncModsinternal.Instance.SyncFromInternalMetadata(selectedSave);
-                            }
+                  // 2. RESTART + LOAD - Blue Info Button
+                  .SetInfoButton(() => { GameRestarter.Restart(extraArgs); }, LocHelper.T("calloatti.syncmods.ButtonRestartLoad"))
 
-                            var SaveName = selectedSave.SaveName;
-                            var SettlementName = selectedSave.SettlementReference.SettlementName;
+                  // 3. RESTART (Safe) - Green Confirm Button
+                  .SetConfirmButton(() => { GameRestarter.Restart(); }, LocHelper.T("calloatti.syncmods.ButtonRestart"));
 
-                            // This works
-                            var extraArgs = $" -skipModManager -settlementName \"{SettlementName}\" -saveName \"{SaveName}\"";
+              // SHOW THE DIALOG
+              builder.Show();
 
-                            // This crashes
-                            //var extraArgs = $" -settlementName \"{SettlementName}\" -saveName \"{SaveName}\"";
-
-                            
-                            // --- DIALOG CONFIGURATION ---
-                            var builder = dialogBoxShower?.Create()
-                                .SetMessage(LocHelper.T("calloatti.syncmods.SyncDialogboxText"))
-
-                               // 1. CANCEL - Red/Standard Cancel Button
-                               .SetCancelButton(() => { }, LocHelper.T("calloatti.syncmods.ButtonCancel")) // Closes the dialog silently
-
-                                // 2. RESTART + LOAD - Blue Info Button
-                                .SetInfoButton(() => { GameRestarter.Restart(extraArgs); }, LocHelper.T("calloatti.syncmods.ButtonRestartLoad"))
-
-                                // 3. RESTART (Safe) - Green Confirm Button
-                                .SetConfirmButton(() => { GameRestarter.Restart(""); }, LocHelper.T("calloatti.syncmods.ButtonRestart"));
-
-                            // SHOW THE DIALOG
-                            builder.Show();
-
-                        }
-                    }
-                });
-
-                VisualElement container = loadButton.parent;
-                container.Insert(container.IndexOf(loadButton), syncButton);
             }
+          }
+        });
 
-            // ---------------------------------------------------------
-            // ENABLE/DISABLE LOGIC
-            // ---------------------------------------------------------
-            if (root != null)
-            {
-                Button existingSyncButton = root.Q<Button>(SyncButtonName);
+        VisualElement container = loadButton.parent;
+        container.Insert(container.IndexOf(loadButton), syncButton);
+      }
 
-                if (existingSyncButton != null)
-                {
-                    //Log.Info($" SceneManager.GetActiveScene().name: {SceneManager.GetActiveScene().name}");
+      // ---------------------------------------------------------
+      // ENABLE/DISABLE LOGIC
+      // ---------------------------------------------------------
+      if (root != null)
+      {
+        Button existingSyncButton = root.Q<Button>(SyncButtonName);
 
-                    bool isMainMenu = string.Equals(SceneManager.GetActiveScene().name, "1-MainMenuScene", StringComparison.OrdinalIgnoreCase);
+        if (existingSyncButton != null)
+        {
+          //Log.Info($" SceneManager.GetActiveScene().name: {SceneManager.GetActiveScene().name}");
 
-                    existingSyncButton.SetEnabled(isMainMenu);
+          bool isMainMenu = string.Equals(SceneManager.GetActiveScene().name, "1-MainMenuScene", StringComparison.OrdinalIgnoreCase);
 
-                }
-            }
+          existingSyncButton.SetEnabled(isMainMenu);
+
         }
+      }
     }
+  }
 }
